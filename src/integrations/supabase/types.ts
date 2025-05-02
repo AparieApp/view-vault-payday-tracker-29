@@ -9,7 +9,258 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      bonus_thresholds: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          payment_settings_id: string
+          threshold: number
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          payment_settings_id: string
+          threshold: number
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          payment_settings_id?: string
+          threshold?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bonus_thresholds_payment_settings_id_fkey"
+            columns: ["payment_settings_id"]
+            isOneToOne: false
+            referencedRelation: "payment_settings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channel_content_mappings: {
+        Row: {
+          channel_id: string
+          content_item_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          channel_id: string
+          content_item_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          channel_id?: string
+          content_item_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_content_mappings_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_content_mappings_content_item_id_fkey"
+            columns: ["content_item_id"]
+            isOneToOne: false
+            referencedRelation: "content_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channels: {
+        Row: {
+          created_at: string
+          default_payment_settings_id: string | null
+          id: string
+          name: string
+          platform: string
+          platform_id: string
+          platform_url: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_payment_settings_id?: string | null
+          id?: string
+          name: string
+          platform: string
+          platform_id: string
+          platform_url: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_payment_settings_id?: string | null
+          id?: string
+          name?: string
+          platform?: string
+          platform_id?: string
+          platform_url?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      content_items: {
+        Row: {
+          belongs_to_channel: boolean
+          created_at: string
+          current_views: number
+          id: string
+          managed_by_manager: boolean
+          payment_settings_id: string | null
+          platform: string
+          platform_id: string | null
+          title: string
+          updated_at: string
+          upload_date: string
+        }
+        Insert: {
+          belongs_to_channel?: boolean
+          created_at?: string
+          current_views?: number
+          id?: string
+          managed_by_manager?: boolean
+          payment_settings_id?: string | null
+          platform: string
+          platform_id?: string | null
+          title: string
+          updated_at?: string
+          upload_date: string
+        }
+        Update: {
+          belongs_to_channel?: boolean
+          created_at?: string
+          current_views?: number
+          id?: string
+          managed_by_manager?: boolean
+          payment_settings_id?: string | null
+          platform?: string
+          platform_id?: string | null
+          title?: string
+          updated_at?: string
+          upload_date?: string
+        }
+        Relationships: []
+      }
+      payment_settings: {
+        Row: {
+          base_pay: number
+          combine_views: boolean
+          created_at: string
+          id: string
+          max_payout: number | null
+          name: string
+          tracking_period_days: number
+          updated_at: string
+          view_rate: number
+          views_per_unit: number
+        }
+        Insert: {
+          base_pay?: number
+          combine_views?: boolean
+          created_at?: string
+          id?: string
+          max_payout?: number | null
+          name: string
+          tracking_period_days?: number
+          updated_at?: string
+          view_rate?: number
+          views_per_unit?: number
+        }
+        Update: {
+          base_pay?: number
+          combine_views?: boolean
+          created_at?: string
+          id?: string
+          max_payout?: number | null
+          name?: string
+          tracking_period_days?: number
+          updated_at?: string
+          view_rate?: number
+          views_per_unit?: number
+        }
+        Relationships: []
+      }
+      payouts: {
+        Row: {
+          amount: number
+          content_item_id: string
+          created_at: string
+          date: string
+          id: string
+          view_count: number
+        }
+        Insert: {
+          amount: number
+          content_item_id: string
+          created_at?: string
+          date?: string
+          id?: string
+          view_count: number
+        }
+        Update: {
+          amount?: number
+          content_item_id?: string
+          created_at?: string
+          date?: string
+          id?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payouts_content_item_id_fkey"
+            columns: ["content_item_id"]
+            isOneToOne: false
+            referencedRelation: "content_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      view_history: {
+        Row: {
+          content_item_id: string
+          created_at: string
+          id: string
+          record_date: string
+          view_count: number
+        }
+        Insert: {
+          content_item_id: string
+          created_at?: string
+          id?: string
+          record_date?: string
+          view_count: number
+        }
+        Update: {
+          content_item_id?: string
+          created_at?: string
+          id?: string
+          record_date?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "view_history_content_item_id_fkey"
+            columns: ["content_item_id"]
+            isOneToOne: false
+            referencedRelation: "content_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

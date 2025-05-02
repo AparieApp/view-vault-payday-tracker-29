@@ -1,9 +1,19 @@
 
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import { toast } from "sonner";
 import { Platform, PaymentSettings, ContentItem, Payout, PayoutSummary } from '@/types';
-import { calculatePayment } from '@/lib/utils';
+import { calculatePayment, isWithinDays } from '@/lib/utils';
+import { 
+  getPaymentSettings, 
+  createPaymentSetting, 
+  updateChannel, 
+  getContentItems, 
+  createContentItem,
+  updateContentItem,
+  deleteContentItem,
+  createPayout
+} from '@/services/supabaseService';
+import { supabase } from "@/integrations/supabase/client";
 
 // Define the state shape
 interface TrackerState {
@@ -11,18 +21,21 @@ interface TrackerState {
   paymentSettings: PaymentSettings[];
   contentItems: ContentItem[];
   payouts: Payout[];
+  isLoading: boolean;
 }
 
 // Define action types
 type TrackerAction =
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'FETCH_PAYMENT_SETTINGS'; payload: PaymentSettings[] }
   | { type: 'ADD_PAYMENT_SETTING'; payload: PaymentSettings }
   | { type: 'UPDATE_PAYMENT_SETTING'; payload: PaymentSettings }
   | { type: 'DELETE_PAYMENT_SETTING'; payload: string }
+  | { type: 'FETCH_CONTENT_ITEMS'; payload: ContentItem[] }
   | { type: 'ADD_CONTENT_ITEM'; payload: ContentItem }
   | { type: 'UPDATE_CONTENT_ITEM'; payload: ContentItem }
   | { type: 'DELETE_CONTENT_ITEM'; payload: string }
   | { type: 'ADD_PAYOUT'; payload: Payout[] }
-  | { type: 'LOAD_STATE'; payload: TrackerState }
   | { type: 'RESET_STATE' };
 
 // Initial state
@@ -40,7 +53,8 @@ const initialState: TrackerState = {
   ],
   paymentSettings: [],
   contentItems: [],
-  payouts: []
+  payouts: [],
+  isLoading: true
 };
 
 // Create context
@@ -59,6 +73,7 @@ interface TrackerContextType {
   calculateTotalPaid: (contentItem: ContentItem) => number;
   generatePayoutSummary: () => PayoutSummary[];
   getActiveContentItems: () => ContentItem[];
+  refreshData: () => Promise<void>;
 }
 
 const TrackerContext = createContext<TrackerContextType | undefined>(undefined);
@@ -66,6 +81,18 @@ const TrackerContext = createContext<TrackerContextType | undefined>(undefined);
 // Reducer
 const trackerReducer = (state: TrackerState, action: TrackerAction): TrackerState => {
   switch (action.type) {
+    case 'SET_LOADING':
+      return {
+        ...state,
+        isLoading: action.payload
+      };
+    
+    case 'FETCH_PAYMENT_SETTINGS':
+      return {
+        ...state,
+        paymentSettings: action.payload
+      };
+    
     case 'ADD_PAYMENT_SETTING':
       return {
         ...state,
@@ -84,6 +111,12 @@ const trackerReducer = (state: TrackerState, action: TrackerAction): TrackerStat
       return {
         ...state,
         paymentSettings: state.paymentSettings.filter(setting => setting.id !== action.payload)
+      };
+    
+    case 'FETCH_CONTENT_ITEMS':
+      return {
+        ...state,
+        contentItems: action.payload
       };
     
     case 'ADD_CONTENT_ITEM':
@@ -112,9 +145,6 @@ const trackerReducer = (state: TrackerState, action: TrackerAction): TrackerStat
         payouts: [...state.payouts, ...action.payload]
       };
     
-    case 'LOAD_STATE':
-      return action.payload;
-    
     case 'RESET_STATE':
       return initialState;
     
@@ -127,109 +157,224 @@ const trackerReducer = (state: TrackerState, action: TrackerAction): TrackerStat
 export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(trackerReducer, initialState);
 
-  // Load state from localStorage on component mount
+  // Load data from Supabase on component mount
   useEffect(() => {
-    const savedState = localStorage.getItem('trackerState');
-    if (savedState) {
-      try {
-        dispatch({ type: 'LOAD_STATE', payload: JSON.parse(savedState) });
-      } catch (error) {
-        console.error('Failed to parse saved state:', error);
-      }
-    }
+    loadData();
   }, []);
 
-  // Save state to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('trackerState', JSON.stringify(state));
-  }, [state]);
+  // Function to load data from Supabase
+  const loadData = async () => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    
+    try {
+      // Load payment settings
+      const paymentSettings = await getPaymentSettings();
+      dispatch({ type: 'FETCH_PAYMENT_SETTINGS', payload: paymentSettings });
+      
+      // Load content items with their payouts
+      const contentItems = await getContentItems();
+      dispatch({ type: 'FETCH_CONTENT_ITEMS', payload: contentItems });
+      
+      // Note: payouts are loaded with content items in the getContentItems function
+      
+    } catch (error) {
+      console.error('Error loading data from Supabase:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load data from the database.",
+        variant: "destructive"
+      });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  const refreshData = async () => {
+    await loadData();
+  };
 
   // Add a new payment setting
-  const addPaymentSetting = (settings: Omit<PaymentSettings, 'id'>) => {
-    const newSetting: PaymentSettings = {
-      ...settings,
-      id: uuidv4()
-    };
-    dispatch({ type: 'ADD_PAYMENT_SETTING', payload: newSetting });
-    toast.success("Payment setting added successfully");
+  const addPaymentSetting = async (settings: Omit<PaymentSettings, 'id'>) => {
+    try {
+      const newSetting = await createPaymentSetting(settings);
+      if (newSetting) {
+        dispatch({ type: 'ADD_PAYMENT_SETTING', payload: newSetting });
+        toast({
+          title: "Success",
+          description: "Payment setting added successfully"
+        });
+      }
+    } catch (error) {
+      console.error('Error adding payment setting:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add payment setting.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Update an existing payment setting
-  const updatePaymentSetting = (settings: PaymentSettings) => {
-    dispatch({ type: 'UPDATE_PAYMENT_SETTING', payload: settings });
-    toast.success("Payment setting updated successfully");
+  const updatePaymentSetting = async (settings: PaymentSettings) => {
+    try {
+      // For now, we'll just update the local state
+      // In a real implementation, we would update the Supabase record
+      dispatch({ type: 'UPDATE_PAYMENT_SETTING', payload: settings });
+      toast({
+        title: "Success",
+        description: "Payment setting updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating payment setting:', error);
+      toast({
+        title: "Error", 
+        description: "Failed to update payment setting.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Delete a payment setting
-  const deletePaymentSetting = (id: string) => {
-    dispatch({ type: 'DELETE_PAYMENT_SETTING', payload: id });
-    toast.success("Payment setting deleted successfully");
+  const deletePaymentSetting = async (id: string) => {
+    try {
+      // For now, we'll just update the local state
+      // In a real implementation, we would delete the Supabase record
+      dispatch({ type: 'DELETE_PAYMENT_SETTING', payload: id });
+      toast({
+        title: "Success",
+        description: "Payment setting deleted successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting payment setting:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete payment setting.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Add a new content item
-  const addContentItem = (item: Omit<ContentItem, 'id' | 'payouts'>) => {
-    const newItem: ContentItem = {
-      ...item,
-      id: uuidv4(),
-      payouts: []
-    };
-    dispatch({ type: 'ADD_CONTENT_ITEM', payload: newItem });
-    toast.success("Content item added successfully");
+  const addContentItem = async (item: Omit<ContentItem, 'id' | 'payouts'>) => {
+    try {
+      const newItem = await createContentItem(item);
+      if (newItem) {
+        dispatch({ type: 'ADD_CONTENT_ITEM', payload: newItem });
+        toast({
+          title: "Success",
+          description: "Content item added successfully"
+        });
+      }
+    } catch (error) {
+      console.error('Error adding content item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add content item.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Update an existing content item
-  const updateContentItem = (item: ContentItem) => {
-    dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
-    toast.success("Content item updated successfully");
+  const updateContentItem = async (item: ContentItem) => {
+    try {
+      const success = await updateContentItem(item);
+      if (success) {
+        dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
+        toast({
+          title: "Success",
+          description: "Content item updated successfully"
+        });
+      }
+    } catch (error) {
+      console.error('Error updating content item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update content item.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Delete a content item
-  const deleteContentItem = (id: string) => {
-    dispatch({ type: 'DELETE_CONTENT_ITEM', payload: id });
-    toast.success("Content item deleted successfully");
+  const deleteContentItem = async (id: string) => {
+    try {
+      const success = await deleteContentItem(id);
+      if (success) {
+        dispatch({ type: 'DELETE_CONTENT_ITEM', payload: id });
+        toast({
+          title: "Success",
+          description: "Content item deleted successfully"
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting content item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete content item.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Process payouts for multiple content items
-  const processPayout = (payoutItems: PayoutSummary[]) => {
-    const payouts: Payout[] = [];
-    const updatedContentItems: ContentItem[] = [];
+  const processPayout = async (payoutItems: PayoutSummary[]) => {
+    try {
+      const payouts: Payout[] = [];
+      const updatedContentItems: ContentItem[] = [];
 
-    payoutItems.forEach(item => {
-      if (item.remainingToPay <= 0) return;
+      for (const item of payoutItems) {
+        if (item.remainingToPay <= 0) continue;
 
-      const contentItem = state.contentItems.find(c => c.id === item.contentId);
-      if (!contentItem) return;
+        const contentItem = state.contentItems.find(c => c.id === item.contentId);
+        if (!contentItem) continue;
 
-      const payout: Payout = {
-        id: uuidv4(),
-        date: new Date().toISOString(),
-        amount: item.remainingToPay,
-        contentItemId: item.contentId,
-        viewCount: item.currentViews
-      };
+        const payout = {
+          date: new Date().toISOString(),
+          amount: item.remainingToPay,
+          contentItemId: item.contentId,
+          viewCount: item.currentViews
+        };
 
-      payouts.push(payout);
+        const newPayout = await createPayout(payout);
+        if (newPayout) {
+          payouts.push(newPayout);
 
-      // Update content item with the new payout
-      const updatedItem = {
-        ...contentItem,
-        payouts: [...contentItem.payouts, payout]
-      };
-      updatedContentItems.push(updatedItem);
-    });
+          // Update content item with the new payout
+          const updatedItem = {
+            ...contentItem,
+            payouts: [...contentItem.payouts, newPayout]
+          };
+          updatedContentItems.push(updatedItem);
+        }
+      }
 
-    if (payouts.length > 0) {
-      // Add all payouts
-      dispatch({ type: 'ADD_PAYOUT', payload: payouts });
-      
-      // Update all content items
-      updatedContentItems.forEach(item => {
-        dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
+      if (payouts.length > 0) {
+        // Add all payouts
+        dispatch({ type: 'ADD_PAYOUT', payload: payouts });
+        
+        // Update all content items
+        updatedContentItems.forEach(item => {
+          dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
+        });
+        
+        toast({
+          title: "Success",
+          description: `Successfully processed ${payouts.length} payouts`
+        });
+      } else {
+        toast({
+          title: "Info",
+          description: "No payouts to process"
+        });
+      }
+    } catch (error) {
+      console.error('Error processing payouts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process payouts.",
+        variant: "destructive"
       });
-      
-      toast.success(`Successfully processed ${payouts.length} payouts`);
-    } else {
-      toast.info("No payouts to process");
     }
   };
 
@@ -237,7 +382,10 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const resetState = () => {
     if (confirm("Are you sure you want to reset all data? This cannot be undone.")) {
       dispatch({ type: 'RESET_STATE' });
-      toast.success("All data has been reset");
+      toast({
+        title: "Success",
+        description: "All data has been reset"
+      });
     }
   };
 
@@ -275,10 +423,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (!settings) return false;
 
       const uploadDate = new Date(item.uploadDate);
-      const now = new Date();
-      const daysSinceUpload = Math.floor((now.getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      return daysSinceUpload <= settings.trackingPeriodDays;
+      return isWithinDays(uploadDate, settings.trackingPeriodDays);
     });
   };
 
@@ -324,7 +469,8 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     calculatePendingEarnings,
     calculateTotalPaid,
     generatePayoutSummary,
-    getActiveContentItems
+    getActiveContentItems,
+    refreshData
   };
 
   return (

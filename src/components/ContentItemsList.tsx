@@ -1,9 +1,21 @@
 
-import React, { useState } from 'react';
-import { useTracker } from '@/contexts/TrackerContext';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import React, { useState, useEffect } from "react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useTracker } from "@/contexts/TrackerContext";
+import { formatCurrency, formatNumber } from "@/lib/utils";
+import { Plus, ExternalLink, Edit, Trash, Check, X } from "lucide-react";
+import PlatformIcon from "./PlatformIcon";
+import ContentItemForm from "./ContentItemForm";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,145 +25,311 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatCurrency, formatNumber } from '@/lib/utils';
-import { Edit, Trash, Plus, CalendarDays } from 'lucide-react';
-import { format } from 'date-fns';
-import PlatformIcon from './PlatformIcon';
-import ContentItemForm from './ContentItemForm';
+} from "@/components/ui/alert-dialog";
+import { ContentItem } from "@/types";
+import { Channel, getChannels, assignContentToChannel, getChannelsForContent } from "@/services/supabaseService";
+import { Checkbox } from "./ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import ViewCountUpdater from "./ViewCountUpdater";
+import { toast } from "sonner";
 
 const ContentItemsList: React.FC = () => {
-  const { state, deleteContentItem, calculateEarnings, calculatePendingEarnings } = useTracker();
+  const { state, deleteContentItem, updateContentItem } = useTracker();
+  const { contentItems, paymentSettings, isLoading } = state;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | undefined>(undefined);
-  const [deletingId, setDeletingId] = useState<string | undefined>(undefined);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [contentChannels, setContentChannels] = useState<Record<string, Channel[]>>({});
+  const [loadingChannels, setLoadingChannels] = useState(false);
 
-  const handleAddNew = () => {
-    setEditingId(undefined);
-    setIsDialogOpen(true);
-  };
+  useEffect(() => {
+    fetchChannels();
+  }, []);
 
-  const handleEdit = (id: string) => {
-    setEditingId(id);
-    setIsDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (deletingId) {
-      deleteContentItem(deletingId);
-      setDeletingId(undefined);
+  const fetchChannels = async () => {
+    setLoadingChannels(true);
+    try {
+      const allChannels = await getChannels();
+      setChannels(allChannels);
+      
+      // Fetch channel associations for each content item
+      const channelMap: Record<string, Channel[]> = {};
+      
+      for (const item of contentItems) {
+        const itemChannels = await getChannelsForContent(item.id);
+        channelMap[item.id] = itemChannels;
+      }
+      
+      setContentChannels(channelMap);
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+    } finally {
+      setLoadingChannels(false);
     }
   };
 
-  // Function to get the name of a payment setting by ID
-  const getSettingName = (id: string) => {
-    const setting = state.paymentSettings.find(s => s.id === id);
-    return setting ? setting.name : 'Unknown Setting';
+  const handleAddClick = () => {
+    setSelectedItemId(null);
+    setIsDialogOpen(true);
   };
+
+  const handleEditClick = (id: string) => {
+    setSelectedItemId(id);
+    setIsDialogOpen(true);
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setItemToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (itemToDelete) {
+      await deleteContentItem(itemToDelete);
+      setDeleteDialogOpen(false);
+      setItemToDelete(null);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    setSelectedItemId(null);
+  };
+  
+  const handleAttributionToggle = async (item: ContentItem, field: 'belongs_to_channel' | 'managed_by_manager') => {
+    try {
+      // Update the content item in Supabase
+      const updated = { ...item };
+      
+      if (field === 'belongs_to_channel') {
+        updated.belongsToChannel = !item.belongsToChannel;
+      } else {
+        updated.managedByManager = !item.managedByManager;
+      }
+      
+      await updateContentItem(updated);
+      
+      // Toast notification
+      toast({
+        title: "Setting updated",
+        description: `Content item ${field === 'belongs_to_channel' ? 'channel attribution' : 'manager attribution'} updated.`
+      });
+    } catch (error) {
+      console.error(`Error updating ${field}:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to update content item attribution.`,
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleChannelSelect = async (contentItemId: string, channelId: string) => {
+    try {
+      const success = await assignContentToChannel(contentItemId, channelId);
+      
+      if (success) {
+        toast({
+          title: "Channel assigned",
+          description: "Content item assigned to channel successfully."
+        });
+        
+        // Update local state
+        const channel = channels.find(c => c.id === channelId);
+        if (channel) {
+          setContentChannels(prev => ({
+            ...prev,
+            [contentItemId]: [...(prev[contentItemId] || []), channel]
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error assigning channel:', error);
+      toast({
+        title: "Error",
+        description: "Failed to assign content to channel.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Content Items</h2>
+        </div>
+        <div className="animate-pulse">
+          <div className="h-10 bg-muted rounded w-full mb-4"></div>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 bg-muted rounded w-full mb-2"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Content Items</h2>
-        <Button onClick={handleAddNew} disabled={state.paymentSettings.length === 0}>
-          <Plus className="mr-1 h-4 w-4" /> Add New Content
-        </Button>
-      </div>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Content Items</h2>
+          <div className="flex gap-2">
+            <ViewCountUpdater buttonText="Update All View Counts" />
+            <Button onClick={handleAddClick}>
+              <Plus className="mr-2 h-4 w-4" /> Add Content Item
+            </Button>
+          </div>
+        </div>
 
-      {state.contentItems.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No content items added yet.</p>
-              {state.paymentSettings.length > 0 ? (
-                <Button variant="outline" className="mt-4" onClick={handleAddNew}>
-                  <Plus className="mr-1 h-4 w-4" /> Add Your First Content Item
-                </Button>
-              ) : (
-                <p className="text-sm text-muted-foreground mt-2">
-                  You need to create payment settings first.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="pt-6 overflow-auto">
+        {contentItems.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-10">
+              <p className="mb-4 text-muted-foreground">
+                No content items added yet. Start tracking your content to see
+                earnings.
+              </p>
+              <Button onClick={handleAddClick}>
+                <Plus className="mr-2 h-4 w-4" /> Add Your First Content Item
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Platform</TableHead>
                   <TableHead>Title</TableHead>
+                  <TableHead>Platform</TableHead>
                   <TableHead>Upload Date</TableHead>
-                  <TableHead>Views</TableHead>
+                  <TableHead className="text-right">Views</TableHead>
                   <TableHead>Payment Settings</TableHead>
-                  <TableHead>Total Earned</TableHead>
-                  <TableHead>Pending</TableHead>
+                  <TableHead>Channel?</TableHead>
+                  <TableHead>Manager?</TableHead>
+                  <TableHead className="text-right">Earned</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {state.contentItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <PlatformIcon platform={item.platform} />
-                    </TableCell>
-                    <TableCell className="font-medium">{item.title}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center">
-                        <CalendarDays className="h-4 w-4 mr-1 text-muted-foreground" />
-                        {format(new Date(item.uploadDate), 'MMM d, yyyy')}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatNumber(item.views)}</TableCell>
-                    <TableCell>{getSettingName(item.paymentSettingsId)}</TableCell>
-                    <TableCell>{formatCurrency(calculateEarnings(item))}</TableCell>
-                    <TableCell>{formatCurrency(calculatePendingEarnings(item))}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(item.id)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeletingId(item.id)}>
-                        <Trash className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {contentItems.map((item) => {
+                  const paymentSetting = paymentSettings.find(
+                    (setting) => setting.id === item.paymentSettingsId
+                  );
+                  
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.title}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <PlatformIcon platform={item.platform} size={20} />
+                          <span className="ml-2 capitalize">{item.platform}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(item.uploadDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end">
+                          {formatNumber(item.views)}
+                          <ViewCountUpdater
+                            contentItemId={item.id}
+                            buttonText=""
+                            variant="ghost"
+                            size="icon"
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {paymentSetting ? paymentSetting.name : "None"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Checkbox
+                            checked={item.belongsToChannel}
+                            onCheckedChange={() => handleAttributionToggle(item, 'belongs_to_channel')}
+                          />
+                          {item.belongsToChannel ? (
+                            <Check className="h-4 w-4 ml-2 text-green-500" />
+                          ) : (
+                            <X className="h-4 w-4 ml-2 text-red-500" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Checkbox
+                            checked={item.managedByManager}
+                            onCheckedChange={() => handleAttributionToggle(item, 'managed_by_manager')}
+                          />
+                          {item.managedByManager ? (
+                            <Check className="h-4 w-4 ml-2 text-green-500" />
+                          ) : (
+                            <X className="h-4 w-4 ml-2 text-red-500" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {/* To be implemented with earnings calculation */}
+                        {formatCurrency(0)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditClick(item.id)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteClick(item.id)}
+                          >
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        )}
 
-      {/* Dialog for adding/editing content items */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <ContentItemForm 
-            editingId={editingId} 
-            onClose={() => setIsDialogOpen(false)} 
-          />
-        </DialogContent>
-      </Dialog>
+        <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <ContentItemForm
+              editingId={selectedItemId || undefined}
+              onClose={handleCloseDialog}
+            />
+          </DialogContent>
+        </Dialog>
 
-      {/* Alert dialog for confirming deletion */}
-      <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(undefined)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this content item and its payment history. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete this
+                content item and any associated data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </>
   );
 };

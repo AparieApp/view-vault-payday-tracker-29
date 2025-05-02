@@ -1,1 +1,8 @@
+
 project_id = "nsjskhqqrneyrwfomkyw"
+
+[functions.update-view-counts]
+verify_jwt = false
+
+[functions.view-count-scheduler]
+verify_jwt = false
