@@ -41,24 +41,21 @@ const ViewCountUpdater: React.FC<ViewCountUpdaterProps> = ({
       }
       
       if (data.success) {
-        toast({
-          title: "View counts updated",
+        toast("View counts updated", {
           description: data.message
         });
         
         // Refresh data in the context
         await refreshData();
       } else {
-        toast({
-          title: "Update failed",
+        toast("Update failed", {
           description: data.error || "Failed to update view counts",
           variant: "destructive"
         });
       }
     } catch (error) {
       console.error('Error updating view counts:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: error.message || "An unexpected error occurred",
         variant: "destructive"
       });

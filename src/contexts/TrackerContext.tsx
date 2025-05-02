@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import { toast } from "sonner";
 import { Platform, PaymentSettings, ContentItem, Payout, PayoutSummary } from '@/types';
@@ -6,11 +5,11 @@ import { calculatePayment, isWithinDays } from '@/lib/utils';
 import { 
   getPaymentSettings, 
   createPaymentSetting, 
-  updateChannel, 
+  updateChannel as updateChannelInSupabase, 
   getContentItems, 
-  createContentItem,
-  updateContentItem,
-  deleteContentItem,
+  createContentItem as createContentItemInSupabase,
+  updateContentItem as updateContentItemInSupabase,
+  deleteContentItem as deleteContentItemInSupabase,
   createPayout
 } from '@/services/supabaseService';
 import { supabase } from "@/integrations/supabase/client";
@@ -179,8 +178,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
     } catch (error) {
       console.error('Error loading data from Supabase:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to load data from the database.",
         variant: "destructive"
       });
@@ -199,15 +197,13 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const newSetting = await createPaymentSetting(settings);
       if (newSetting) {
         dispatch({ type: 'ADD_PAYMENT_SETTING', payload: newSetting });
-        toast({
-          title: "Success",
+        toast("Success", {
           description: "Payment setting added successfully"
         });
       }
     } catch (error) {
       console.error('Error adding payment setting:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to add payment setting.",
         variant: "destructive"
       });
@@ -220,14 +216,12 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // For now, we'll just update the local state
       // In a real implementation, we would update the Supabase record
       dispatch({ type: 'UPDATE_PAYMENT_SETTING', payload: settings });
-      toast({
-        title: "Success",
+      toast("Success", {
         description: "Payment setting updated successfully"
       });
     } catch (error) {
       console.error('Error updating payment setting:', error);
-      toast({
-        title: "Error", 
+      toast("Error", { 
         description: "Failed to update payment setting.",
         variant: "destructive"
       });
@@ -240,14 +234,12 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // For now, we'll just update the local state
       // In a real implementation, we would delete the Supabase record
       dispatch({ type: 'DELETE_PAYMENT_SETTING', payload: id });
-      toast({
-        title: "Success",
+      toast("Success", {
         description: "Payment setting deleted successfully"
       });
     } catch (error) {
       console.error('Error deleting payment setting:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to delete payment setting.",
         variant: "destructive"
       });
@@ -257,18 +249,16 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Add a new content item
   const addContentItem = async (item: Omit<ContentItem, 'id' | 'payouts'>) => {
     try {
-      const newItem = await createContentItem(item);
+      const newItem = await createContentItemInSupabase(item);
       if (newItem) {
         dispatch({ type: 'ADD_CONTENT_ITEM', payload: newItem });
-        toast({
-          title: "Success",
+        toast("Success", {
           description: "Content item added successfully"
         });
       }
     } catch (error) {
       console.error('Error adding content item:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to add content item.",
         variant: "destructive"
       });
@@ -278,18 +268,16 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Update an existing content item
   const updateContentItem = async (item: ContentItem) => {
     try {
-      const success = await updateContentItem(item);
+      const success = await updateContentItemInSupabase(item);
       if (success) {
         dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
-        toast({
-          title: "Success",
+        toast("Success", {
           description: "Content item updated successfully"
         });
       }
     } catch (error) {
       console.error('Error updating content item:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to update content item.",
         variant: "destructive"
       });
@@ -299,18 +287,16 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Delete a content item
   const deleteContentItem = async (id: string) => {
     try {
-      const success = await deleteContentItem(id);
+      const success = await deleteContentItemInSupabase(id);
       if (success) {
         dispatch({ type: 'DELETE_CONTENT_ITEM', payload: id });
-        toast({
-          title: "Success",
+        toast("Success", {
           description: "Content item deleted successfully"
         });
       }
     } catch (error) {
       console.error('Error deleting content item:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to delete content item.",
         variant: "destructive"
       });
@@ -358,20 +344,17 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           dispatch({ type: 'UPDATE_CONTENT_ITEM', payload: item });
         });
         
-        toast({
-          title: "Success",
+        toast("Success", {
           description: `Successfully processed ${payouts.length} payouts`
         });
       } else {
-        toast({
-          title: "Info",
+        toast("Info", {
           description: "No payouts to process"
         });
       }
     } catch (error) {
       console.error('Error processing payouts:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to process payouts.",
         variant: "destructive"
       });
@@ -382,8 +365,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const resetState = () => {
     if (confirm("Are you sure you want to reset all data? This cannot be undone.")) {
       dispatch({ type: 'RESET_STATE' });
-      toast({
-        title: "Success",
+      toast("Success", {
         description: "All data has been reset"
       });
     }

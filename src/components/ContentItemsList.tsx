@@ -26,8 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ContentItem } from "@/types";
-import { Channel, getChannels, assignContentToChannel, getChannelsForContent } from "@/services/supabaseService";
+import { ContentItem, Channel } from "@/types";
+import { getChannels, assignContentToChannel, getChannelsForContent } from "@/services/supabaseService";
 import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import ViewCountUpdater from "./ViewCountUpdater";
@@ -98,12 +98,12 @@ const ContentItemsList: React.FC = () => {
     setSelectedItemId(null);
   };
   
-  const handleAttributionToggle = async (item: ContentItem, field: 'belongs_to_channel' | 'managed_by_manager') => {
+  const handleAttributionToggle = async (item: ContentItem, field: 'belongsToChannel' | 'managedByManager') => {
     try {
       // Update the content item in Supabase
       const updated = { ...item };
       
-      if (field === 'belongs_to_channel') {
+      if (field === 'belongsToChannel') {
         updated.belongsToChannel = !item.belongsToChannel;
       } else {
         updated.managedByManager = !item.managedByManager;
@@ -112,14 +112,12 @@ const ContentItemsList: React.FC = () => {
       await updateContentItem(updated);
       
       // Toast notification
-      toast({
-        title: "Setting updated",
-        description: `Content item ${field === 'belongs_to_channel' ? 'channel attribution' : 'manager attribution'} updated.`
+      toast("Setting updated", {
+        description: `Content item ${field === 'belongsToChannel' ? 'channel attribution' : 'manager attribution'} updated.`
       });
     } catch (error) {
       console.error(`Error updating ${field}:`, error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: `Failed to update content item attribution.`,
         variant: "destructive"
       });
@@ -131,8 +129,7 @@ const ContentItemsList: React.FC = () => {
       const success = await assignContentToChannel(contentItemId, channelId);
       
       if (success) {
-        toast({
-          title: "Channel assigned",
+        toast("Channel assigned", {
           description: "Content item assigned to channel successfully."
         });
         
@@ -147,8 +144,7 @@ const ContentItemsList: React.FC = () => {
       }
     } catch (error) {
       console.error('Error assigning channel:', error);
-      toast({
-        title: "Error",
+      toast("Error", {
         description: "Failed to assign content to channel.",
         variant: "destructive"
       });
@@ -247,8 +243,8 @@ const ContentItemsList: React.FC = () => {
                       <TableCell>
                         <div className="flex items-center">
                           <Checkbox
-                            checked={item.belongsToChannel}
-                            onCheckedChange={() => handleAttributionToggle(item, 'belongs_to_channel')}
+                            checked={item.belongsToChannel ?? false}
+                            onCheckedChange={() => handleAttributionToggle(item, 'belongsToChannel')}
                           />
                           {item.belongsToChannel ? (
                             <Check className="h-4 w-4 ml-2 text-green-500" />
@@ -260,8 +256,8 @@ const ContentItemsList: React.FC = () => {
                       <TableCell>
                         <div className="flex items-center">
                           <Checkbox
-                            checked={item.managedByManager}
-                            onCheckedChange={() => handleAttributionToggle(item, 'managed_by_manager')}
+                            checked={item.managedByManager ?? false}
+                            onCheckedChange={() => handleAttributionToggle(item, 'managedByManager')}
                           />
                           {item.managedByManager ? (
                             <Check className="h-4 w-4 ml-2 text-green-500" />

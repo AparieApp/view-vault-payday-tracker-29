@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { Platform, PaymentSettings, ContentItem, Payout, BonusThreshold } from '@/types';
 
@@ -40,7 +39,11 @@ export async function getChannels(): Promise<Channel[]> {
     return [];
   }
   
-  return data || [];
+  // Properly cast platform to Platform type
+  return (data || []).map(channel => ({
+    ...channel,
+    platform: channel.platform as Platform
+  }));
 }
 
 export async function getChannelById(id: string): Promise<Channel | null> {
@@ -55,7 +58,13 @@ export async function getChannelById(id: string): Promise<Channel | null> {
     return null;
   }
   
-  return data;
+  if (!data) return null;
+  
+  // Properly cast platform to Platform type
+  return {
+    ...data,
+    platform: data.platform as Platform
+  };
 }
 
 export async function createChannel(channel: Omit<Channel, 'id' | 'created_at' | 'updated_at'>): Promise<Channel | null> {
@@ -69,7 +78,13 @@ export async function createChannel(channel: Omit<Channel, 'id' | 'created_at' |
     return null;
   }
   
-  return data?.[0] || null;
+  if (!data || data.length === 0) return null;
+  
+  // Properly cast platform to Platform type
+  return {
+    ...data[0],
+    platform: data[0].platform as Platform
+  };
 }
 
 export async function updateChannel(channel: Partial<Channel> & { id: string }): Promise<boolean> {
@@ -115,14 +130,21 @@ export async function getContentItems(): Promise<ContentItem[]> {
   }
   
   return (data || []).map(item => ({
-    ...item,
     id: item.id,
     title: item.title,
     platform: item.platform as Platform,
     uploadDate: item.upload_date,
     views: item.current_views,
     paymentSettingsId: item.payment_settings_id || '',
-    payouts: item.payouts || []
+    payouts: (item.payouts || []).map((payout: any) => ({
+      id: payout.id,
+      date: payout.date,
+      amount: payout.amount,
+      contentItemId: payout.content_item_id,
+      viewCount: payout.view_count
+    })),
+    belongsToChannel: item.belongs_to_channel,
+    managedByManager: item.managed_by_manager
   }));
 }
 
@@ -345,7 +367,9 @@ export async function getContentForChannel(channelId: string): Promise<ContentIt
     uploadDate: mapping.content_items.upload_date,
     views: mapping.content_items.current_views,
     paymentSettingsId: mapping.content_items.payment_settings_id || '',
-    payouts: []
+    payouts: [],
+    belongsToChannel: mapping.content_items.belongs_to_channel,
+    managedByManager: mapping.content_items.managed_by_manager
   }));
 }
 
@@ -363,7 +387,10 @@ export async function getChannelsForContent(contentItemId: string): Promise<Chan
     return [];
   }
   
-  return (data || []).map(mapping => mapping.channels);
+  return (data || []).map(mapping => ({
+    ...mapping.channels,
+    platform: mapping.channels.platform as Platform
+  }));
 }
 
 // View history functions
