@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,6 +62,23 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				// Custom colors for our app
+				brand: {
+					purple: '#9b87f5',
+					'dark-purple': '#7E69AB',
+					'vivid-purple': '#8B5CF6',
+				},
+				platform: {
+					tiktok: '#000000',
+					youtube: '#FF0000',
+					instagram: '#E1306C',
+					twitter: '#1DA1F2',
+					linkedin: '#0077B5',
+					threads: '#000000',
+					facebook: '#1877F2',
+					bluesky: '#1285FE',
+					pinterest: '#E60023',
 				}
 			},
 			borderRadius: {
