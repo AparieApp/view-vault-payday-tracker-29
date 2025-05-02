@@ -17,6 +17,7 @@ export interface BonusThreshold {
 
 export interface PaymentSettings {
   id: string;
+  name: string; // Added name property
   basePay: number;
   viewRate: number;
   viewsPerUnit: number; // e.g., 1000 for "$X per 1000 views"
