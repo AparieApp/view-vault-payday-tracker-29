@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useTracker } from '@/contexts/TrackerContext';
 import { Button } from '@/components/ui/button';
@@ -22,7 +21,7 @@ const PaymentSettingsList: React.FC = () => {
   const { state, deletePaymentSetting } = useTracker();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
-  const [deletingId, setDeletingId] = useState<string | undefined>(undefined);
+  const [deletingSettingId, setDeletingSettingId] = useState<string | undefined>(undefined);
 
   const handleAddNew = () => {
     setEditingId(undefined);
@@ -35,11 +34,14 @@ const PaymentSettingsList: React.FC = () => {
   };
 
   const handleDeleteConfirm = () => {
-    if (deletingId) {
-      deletePaymentSetting(deletingId);
-      setDeletingId(undefined);
+    if (deletingSettingId) {
+      deletePaymentSetting(deletingSettingId);
+      setDeletingSettingId(undefined);
     }
   };
+
+  // Find the setting being deleted to show its name
+  const deletingSetting = state.paymentSettings.find(s => s.id === deletingSettingId);
 
   return (
     <>
@@ -114,7 +116,7 @@ const PaymentSettingsList: React.FC = () => {
                 <Button variant="outline" size="sm" onClick={() => handleEdit(setting.id)}>
                   <Edit className="h-4 w-4 mr-1" /> Edit
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => setDeletingId(setting.id)}>
+                <Button variant="destructive" size="sm" onClick={() => setDeletingSettingId(setting.id)}>
                   <Trash className="h-4 w-4 mr-1" /> Delete
                 </Button>
               </CardFooter>
@@ -134,12 +136,12 @@ const PaymentSettingsList: React.FC = () => {
       </Dialog>
 
       {/* Alert dialog for confirming deletion */}
-      <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(undefined)}>
+      <AlertDialog open={!!deletingSettingId} onOpenChange={(open) => !open && setDeletingSettingId(undefined)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this payment setting. This action cannot be undone.
+              This will permanently delete the payment setting "{deletingSetting?.name}" and all its thresholds. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

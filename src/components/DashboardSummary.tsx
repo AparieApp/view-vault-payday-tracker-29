@@ -1,24 +1,46 @@
-
 import React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTracker } from "@/contexts/TrackerContext";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import ViewCountUpdater from "./ViewCountUpdater";
+import { ContentItem } from "@/types";
 
 const DashboardSummary: React.FC = () => {
-  const { state, calculateTotalPaid, calculatePendingEarnings } = useTracker();
-  const { contentItems, isLoading } = state;
+  const { state } = useTracker();
+  const { contentItems, paymentSettings, isLoading } = state;
   
-  // Calculate summary statistics
+  // Recalculate summaries based on potentially updated logic/fields
   const totalContent = contentItems.length;
-  const totalViews = contentItems.reduce((sum, item) => sum + item.views, 0);
-  const totalPaid = contentItems.reduce((sum, item) => sum + calculateTotalPaid(item), 0);
-  const totalPending = contentItems.reduce((sum, item) => sum + calculatePendingEarnings(item), 0);
   
+  const calculateTotalPaid = (item: ContentItem): number => {
+      return (item.payouts || []).reduce((sum, payout) => sum + payout.amount, 0);
+  };
+  
+  const calculateFinalEarnings = (item: ContentItem): number => {
+      const setting = paymentSettings.find(s => s.id === item.paymentSettingsId);
+      if (!setting || item.final_views === null || item.final_views === undefined) return 0;
+      // Assuming calculatePayment exists in utils or needs importing/defining
+      // return calculatePayment(setting..., item.final_views, ...);
+      // Placeholder until calculatePayment utility is confirmed/added
+       const paymentAmount = (item.final_views / (setting.viewsPerUnit || 1000)) * (setting.viewRate || 0) + (setting.basePay || 0);
+       return setting.maxPayout ? Math.min(paymentAmount, setting.maxPayout) : paymentAmount;
+  };
+  
+  const totalPaid = contentItems.reduce((sum, item) => sum + calculateTotalPaid(item), 0);
+  
+  // Pending = Total Earned (based on final views for finalized items) - Total Paid
+  const totalPending = contentItems
+      .filter(item => item.status === 'finalized')
+      .reduce((sum, item) => {
+          const itemEarnings = calculateFinalEarnings(item);
+          const itemPaid = calculateTotalPaid(item);
+          return sum + Math.max(0, itemEarnings - itemPaid);
+      }, 0);
+  
+  // We can still show starting views by platform if desired
   const platforms = [...new Set(contentItems.map(item => item.platform))];
-  const viewsByPlatform = platforms.map(platform => {
+  const startingViewsByPlatform = platforms.map(platform => {
     const platformItems = contentItems.filter(item => item.platform === platform);
-    const views = platformItems.reduce((sum, item) => sum + item.views, 0);
+    const views = platformItems.reduce((sum, item) => sum + item.starting_views, 0);
     return { platform, views };
   }).sort((a, b) => b.views - a.views);
   
@@ -42,10 +64,7 @@ const DashboardSummary: React.FC = () => {
   
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Dashboard Summary</h2>
-        <ViewCountUpdater />
-      </div>
+      <h2 className="text-2xl font-bold mb-4">Dashboard Summary</h2>
       
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -60,18 +79,8 @@ const DashboardSummary: React.FC = () => {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle>Total Views</CardTitle>
-            <CardDescription>Across all platforms</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatNumber(totalViews)}</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
             <CardTitle>Total Paid</CardTitle>
-            <CardDescription>All payouts to date</CardDescription>
+            <CardDescription>All payouts processed</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{formatCurrency(totalPaid)}</p>
@@ -81,23 +90,33 @@ const DashboardSummary: React.FC = () => {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle>Pending Payments</CardTitle>
-            <CardDescription>Ready to process</CardDescription>
+            <CardDescription>Based on finalized views</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{formatCurrency(totalPending)}</p>
           </CardContent>
         </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>Total Starting Views</CardTitle>
+            <CardDescription>Sum of initial views when added</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{formatNumber(contentItems.reduce((sum, item) => sum + item.starting_views, 0))}</p>
+          </CardContent>
+        </Card>
       </div>
       
-      {viewsByPlatform.length > 0 && (
+      {startingViewsByPlatform.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-4">Views by Platform</h3>
+          <h3 className="text-lg font-semibold mb-4">Starting Views by Platform</h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {viewsByPlatform.map(({ platform, views }) => (
+            {startingViewsByPlatform.map(({ platform, views }) => (
               <Card key={platform}>
                 <CardHeader className="pb-2">
                   <CardTitle className="capitalize">{platform}</CardTitle>
-                  <CardDescription>Total views</CardDescription>
+                  <CardDescription>Total starting views</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold">{formatNumber(views)}</p>

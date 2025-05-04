@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTracker } from "@/contexts/TrackerContext";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Plus, ExternalLink, Edit, Trash, Check, X } from "lucide-react";
@@ -25,6 +24,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ContentItem, Channel } from "@/types";
 import { getChannels, assignContentToChannel, getChannelsForContent } from "@/services/supabaseService";
@@ -32,8 +32,9 @@ import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import ViewCountUpdater from "./ViewCountUpdater";
 import { toast } from "sonner";
+import { format, addDays } from 'date-fns';
 
-const ContentItemsList: React.FC = () => {
+const ActiveTrackingList: React.FC = () => {
   const { state, deleteContentItem, updateContentItem } = useTracker();
   const { contentItems, paymentSettings, isLoading } = state;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -151,6 +152,19 @@ const ContentItemsList: React.FC = () => {
     }
   };
 
+  const activeItems = contentItems.filter(item => item.status === 'tracking');
+
+  const getTrackingEndDate = (item: ContentItem): Date | null => {
+    const setting = paymentSettings.find(s => s.id === item.paymentSettingsId);
+    if (!setting || !item.uploadDate) return null;
+    try {
+      const startDate = new Date(item.uploadDate);
+      return addDays(startDate, setting.trackingPeriodDays);
+    } catch (e) {
+      return null; // Invalid date format
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -180,121 +194,80 @@ const ContentItemsList: React.FC = () => {
           </div>
         </div>
 
-        {contentItems.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-10">
-              <p className="mb-4 text-muted-foreground">
-                No content items added yet. Start tracking your content to see
-                earnings.
+        <Card>
+          <CardHeader>
+            <CardTitle>Actively Tracking Content</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activeItems.length === 0 ? (
+              <p className="text-muted-foreground">
+                No content items are currently being tracked. Add new content to begin.
               </p>
-              <Button onClick={handleAddClick}>
-                <Plus className="mr-2 h-4 w-4" /> Add Your First Content Item
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Platform</TableHead>
-                  <TableHead>Upload Date</TableHead>
-                  <TableHead className="text-right">Views</TableHead>
-                  <TableHead>Payment Settings</TableHead>
-                  <TableHead>Channel?</TableHead>
-                  <TableHead>Manager?</TableHead>
-                  <TableHead className="text-right">Earned</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {contentItems.map((item) => {
-                  const paymentSetting = paymentSettings.find(
-                    (setting) => setting.id === item.paymentSettingsId
-                  );
-                  
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.title}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center">
-                          <PlatformIcon platform={item.platform} size={20} />
-                          <span className="ml-2 capitalize">{item.platform}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(item.uploadDate).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end">
-                          {formatNumber(item.views)}
-                          <ViewCountUpdater
-                            contentItemId={item.id}
-                            buttonText=""
-                            variant="ghost"
-                            size="icon"
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {paymentSetting ? paymentSetting.name : "None"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center">
-                          <Checkbox
-                            checked={item.belongsToChannel ?? false}
-                            onCheckedChange={() => handleAttributionToggle(item, 'belongsToChannel')}
-                          />
-                          {item.belongsToChannel ? (
-                            <Check className="h-4 w-4 ml-2 text-green-500" />
-                          ) : (
-                            <X className="h-4 w-4 ml-2 text-red-500" />
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center">
-                          <Checkbox
-                            checked={item.managedByManager ?? false}
-                            onCheckedChange={() => handleAttributionToggle(item, 'managedByManager')}
-                          />
-                          {item.managedByManager ? (
-                            <Check className="h-4 w-4 ml-2 text-green-500" />
-                          ) : (
-                            <X className="h-4 w-4 ml-2 text-red-500" />
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {/* To be implemented with earnings calculation */}
-                        {formatCurrency(0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end items-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditClick(item.id)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteClick(item.id)}
-                          >
-                            <Trash className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Platform</TableHead>
+                      <TableHead>Upload Date</TableHead>
+                      <TableHead>Tracking End</TableHead>
+                      <TableHead className="text-right">Starting Views</TableHead>
+                      <TableHead>Payment Settings</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+                  </TableHeader>
+                  <TableBody>
+                    {activeItems.map((item) => {
+                      const paymentSetting = paymentSettings.find(
+                        (setting) => setting.id === item.paymentSettingsId
+                      );
+                      const trackingEndDate = getTrackingEndDate(item);
+                      
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">
+                            {item.video_url ? (
+                                <a href={item.video_url} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                    {item.title}
+                                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                                </a>
+                            ) : item.title}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <PlatformIcon platform={item.platform} size={20} />
+                              <span className="ml-2 capitalize">{item.platform}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {format(new Date(item.uploadDate), 'PP')}
+                          </TableCell>
+                          <TableCell>
+                            {trackingEndDate ? format(trackingEndDate, 'PP') : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatNumber(item.starting_views)}
+                          </TableCell>
+                          <TableCell>
+                            {paymentSetting ? paymentSetting.name : "None"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(item.id)}>
+                                <Trash className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
           <DialogContent className="sm:max-w-[500px]">
@@ -308,20 +281,14 @@ const ContentItemsList: React.FC = () => {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete this
-                content item and any associated data.
+                This action cannot be undone. This will permanently delete the content item and all associated data.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Delete
-              </AlertDialogAction>
+              <AlertDialogCancel onClick={() => setItemToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -330,4 +297,4 @@ const ContentItemsList: React.FC = () => {
   );
 };
 
-export default ContentItemsList;
+export default ActiveTrackingList;

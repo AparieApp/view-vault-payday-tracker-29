@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { Platform, PaymentSettings, ContentItem, Payout, BonusThreshold } from '@/types';
+import { Platform, PaymentSettings, ContentItem, Payout, BonusThreshold, ContentItemStatus } from '@/types';
 
 // Channel interfaces
 export interface Channel {
@@ -122,77 +122,107 @@ export async function getContentItems(): Promise<ContentItem[]> {
     .select(`
       *,
       payouts(*)
-    `);
-  
+    `)
+    .order('upload_date', { ascending: false });
+
   if (error) {
     console.error('Error fetching content items:', error);
     return [];
   }
-  
-  return (data || []).map(item => ({
-    id: item.id,
-    title: item.title,
-    platform: item.platform as Platform,
-    uploadDate: item.upload_date,
-    views: item.current_views,
-    paymentSettingsId: item.payment_settings_id || '',
-    payouts: (item.payouts || []).map((payout: any) => ({
+
+  // Map DB row to ContentItem interface, casting to any for TS
+  return (data as any[]).map((row: any): ContentItem => ({
+    id: row.id,
+    title: row.title,
+    platform: row.platform as Platform,
+    platform_id: row.platform_id ?? undefined,
+    video_url: row.video_url ?? undefined,
+    uploadDate: row.upload_date,
+    starting_views: row.starting_views ?? 0,
+    final_views: row.final_views,
+    status: row.status ?? 'tracking',
+    paymentSettingsId: row.payment_settings_id || '',
+    payouts: (row.payouts || []).map((payout: any) => ({
       id: payout.id,
       date: payout.date,
       amount: payout.amount,
       contentItemId: payout.content_item_id,
       viewCount: payout.view_count
     })),
-    belongsToChannel: item.belongs_to_channel,
-    managedByManager: item.managed_by_manager
+    belongsToChannel: row.belongs_to_channel ?? false,
+    managedByManager: row.managed_by_manager ?? false
   }));
 }
 
-export async function createContentItem(item: Omit<ContentItem, 'id' | 'payouts'>): Promise<ContentItem | null> {
+// Type for creating content items, matching ContentItem structure but omitting generated fields
+type CreateContentItemData = Omit<ContentItem, 'id' | 'payouts' | 'final_views' | 'status'> & { status: ContentItemStatus; final_views: null };
+
+export async function createContentItem(itemData: CreateContentItemData): Promise<ContentItem | null> {
   const { data, error } = await supabase
     .from('content_items')
     .insert([{
-      title: item.title,
-      platform: item.platform,
-      platform_id: null, // Can be updated later
-      upload_date: item.uploadDate,
-      current_views: item.views,
-      payment_settings_id: item.paymentSettingsId,
-      belongs_to_channel: true, // Default to true
-      managed_by_manager: true, // Default to true
+      title: itemData.title,
+      platform: itemData.platform,
+      platform_id: itemData.platform_id,
+      upload_date: itemData.uploadDate,
+      starting_views: itemData.starting_views,
+      final_views: null,
+      status: itemData.status,
+      payment_settings_id: itemData.paymentSettingsId,
+      belongs_to_channel: itemData.belongsToChannel ?? false,
+      managed_by_manager: itemData.managedByManager ?? false
     }])
-    .select();
-  
-  if (error) {
+    .select(`
+      *,
+      payouts(*)
+    `)
+    .single();
+
+  if (error || !data) {
     console.error('Error creating content item:', error);
     return null;
   }
-  
-  return data?.[0] ? {
-    id: data[0].id,
-    title: data[0].title,
-    platform: data[0].platform as Platform,
-    uploadDate: data[0].upload_date,
-    views: data[0].current_views,
-    paymentSettingsId: data[0].payment_settings_id || '',
+
+  // Map the returned DB row to ContentItem interface
+  const row: any = data;
+  return {
+    id: row.id,
+    title: row.title,
+    platform: row.platform as Platform,
+    platform_id: row.platform_id ?? undefined,
+    video_url: row.video_url ?? undefined,
+    uploadDate: row.upload_date,
+    starting_views: row.starting_views ?? 0,
+    final_views: row.final_views,
+    status: row.status ?? 'tracking',
+    paymentSettingsId: row.payment_settings_id || '',
     payouts: []
-  } : null;
+  };
 }
 
-export async function updateContentItem(item: Partial<ContentItem> & { id: string }): Promise<boolean> {
+// Only allow updating fields relevant to the new flow (final_views, status, maybe title/settings?)
+export async function updateContentItem(itemUpdate: Partial<Pick<ContentItem, 'title' | 'final_views' | 'status' | 'paymentSettingsId'>> & { id: string }): Promise<boolean> {
+  
+  // Construct update object, only including fields that are not undefined
+  const updateData: { [key: string]: any } = {};
+  if (itemUpdate.title !== undefined) updateData.title = itemUpdate.title;
+  if (itemUpdate.final_views !== undefined) updateData.final_views = itemUpdate.final_views;
+  if (itemUpdate.status !== undefined) updateData.status = itemUpdate.status;
+  if (itemUpdate.paymentSettingsId !== undefined) updateData.payment_settings_id = itemUpdate.paymentSettingsId;
+  // Add other updatable fields here (e.g., uploadDate, starting_views if needed, though less likely)
+  
+  if (Object.keys(updateData).length === 0) {
+    console.warn("Attempted to update content item with no changes:", itemUpdate.id);
+    return true; // Nothing to update, technically successful
+  }
+
   const { error } = await supabase
     .from('content_items')
-    .update({
-      title: item.title,
-      platform: item.platform,
-      upload_date: item.uploadDate,
-      current_views: item.views,
-      payment_settings_id: item.paymentSettingsId,
-    })
-    .eq('id', item.id);
+    .update(updateData)
+    .eq('id', itemUpdate.id);
   
   if (error) {
-    console.error('Error updating content item:', error);
+    console.error(`Error updating content item ${itemUpdate.id}:`, error);
     return false;
   }
   
@@ -329,6 +359,19 @@ export async function createPayout(payout: Omit<Payout, 'id'>): Promise<Payout |
   } : null;
 }
 
+export async function deletePayout(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('payouts')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error(`Error deleting payout ${id}:`, error);
+    return false;
+  }
+  return true;
+}
+
 // Channel-Content mapping functions
 export async function assignContentToChannel(contentItemId: string, channelId: string): Promise<boolean> {
   const { error } = await supabase
@@ -344,53 +387,6 @@ export async function assignContentToChannel(contentItemId: string, channelId: s
   }
   
   return true;
-}
-
-export async function getContentForChannel(channelId: string): Promise<ContentItem[]> {
-  const { data, error } = await supabase
-    .from('channel_content_mappings')
-    .select(`
-      content_item_id,
-      content_items(*)
-    `)
-    .eq('channel_id', channelId);
-  
-  if (error) {
-    console.error(`Error fetching content for channel ${channelId}:`, error);
-    return [];
-  }
-  
-  return (data || []).map(mapping => ({
-    id: mapping.content_items.id,
-    title: mapping.content_items.title,
-    platform: mapping.content_items.platform as Platform,
-    uploadDate: mapping.content_items.upload_date,
-    views: mapping.content_items.current_views,
-    paymentSettingsId: mapping.content_items.payment_settings_id || '',
-    payouts: [],
-    belongsToChannel: mapping.content_items.belongs_to_channel,
-    managedByManager: mapping.content_items.managed_by_manager
-  }));
-}
-
-export async function getChannelsForContent(contentItemId: string): Promise<Channel[]> {
-  const { data, error } = await supabase
-    .from('channel_content_mappings')
-    .select(`
-      channel_id,
-      channels(*)
-    `)
-    .eq('content_item_id', contentItemId);
-  
-  if (error) {
-    console.error(`Error fetching channels for content ${contentItemId}:`, error);
-    return [];
-  }
-  
-  return (data || []).map(mapping => ({
-    ...mapping.channels,
-    platform: mapping.channels.platform as Platform
-  }));
 }
 
 // View history functions
@@ -427,4 +423,18 @@ export async function getViewHistoryForContent(contentItemId: string): Promise<V
   }
   
   return data || [];
+}
+
+// Delete a payment setting
+export async function deletePaymentSetting(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('payment_settings')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error(`Error deleting payment setting ${id}:`, error);
+    return false;
+  }
+  return true;
 }

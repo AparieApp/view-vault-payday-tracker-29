@@ -1,4 +1,3 @@
-
 export type Platform = 
   | 'tiktok'
   | 'youtube'
@@ -27,12 +26,18 @@ export interface PaymentSettings {
   combineViews: boolean;
 }
 
+export type ContentItemStatus = 'tracking' | 'finalized' | 'paid';
+
 export interface ContentItem {
   id: string;
   title: string;
   platform: Platform;
-  uploadDate: string; // ISO date string
-  views: number;
+  platform_id?: string; // ID or URL for the content on the platform
+  video_url?: string; // Store the original URL
+  uploadDate: string; // ISO date string (Manually set by user)
+  starting_views: number; // Manually set by user at time of adding
+  final_views: number | null; // Manually set by user at end of tracking
+  status: ContentItemStatus;
   paymentSettingsId: string;
   payouts: Payout[];
   belongsToChannel?: boolean; // Added property

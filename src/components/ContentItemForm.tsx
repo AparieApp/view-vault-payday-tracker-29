@@ -1,118 +1,202 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTracker } from '@/contexts/TrackerContext';
-import { Platform } from '@/types';
+import { Platform, ContentItem, ContentItemStatus } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import PlatformIcon from './PlatformIcon';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, LinkIcon, AlertCircle } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { toast } from "sonner";
+
+// Still useful for platform detection
+const SUPPORTED_PLATFORMS: Platform[] = ['youtube', 'tiktok', 'instagram'];
 
 interface ContentItemFormProps {
-  editingId?: string;
   onClose: () => void;
 }
 
-const ContentItemForm: React.FC<ContentItemFormProps> = ({ editingId, onClose }) => {
-  const { state, addContentItem, updateContentItem } = useTracker();
+// Simplified URL parser just for platform detection
+const detectPlatformFromUrl = (url: string): Platform | null => {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+
+    if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+      return 'youtube';
+    } else if (hostname.includes('tiktok.com')) {
+      return 'tiktok';
+    } else if (hostname.includes('instagram.com') && urlObj.pathname.includes('/reel/')) {
+      return 'instagram';
+    }
+  } catch (error) {
+     // Ignore parsing errors silently
+  }
+  return null;
+};
+
+// Extract basic identifier (Video ID or path segment)
+const extractIdFromUrl = (url: string, platform: Platform | null): string | null => {
+    if (!platform || !url) return null;
+    try {
+        const urlObj = new URL(url);
+        if (platform === 'youtube') {
+            let videoId: string | null = null;
+            if (urlObj.hostname.includes('youtu.be')) {
+                videoId = urlObj.pathname.substring(1);
+            } else {
+                videoId = urlObj.searchParams.get('v');
+            }
+            return videoId;
+        } else if (platform === 'tiktok') {
+            const parts = urlObj.pathname.split('/');
+            const idPart = parts.pop() || parts.pop();
+            return idPart && /\d+/.test(idPart) ? idPart : null;
+        } else if (platform === 'instagram') {
+            const match = urlObj.pathname.match(/\/reel\/([^\/]+)/);
+            return match ? match[1] : null;
+        }
+    } catch { return null; }
+    return null;
+}
+
+const ContentItemForm: React.FC<ContentItemFormProps> = ({ onClose }) => {
+  const { state, addContentItem } = useTracker();
   
+  // Form State - Simplified for manual input
+  const [videoUrl, setVideoUrl] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [detectedPlatform, setDetectedPlatform] = useState<Platform | null>(null);
   const [title, setTitle] = useState('');
-  const [platform, setPlatform] = useState<Platform>('youtube');
-  const [uploadDate, setUploadDate] = useState<Date>(new Date());
-  const [views, setViews] = useState(0);
+  const [uploadDate, setUploadDate] = useState<Date | null>(startOfDay(new Date())); // Default to today
+  // Control calendar popover open state for auto-close
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const [startingViews, setStartingViews] = useState(0);
   const [paymentSettingsId, setPaymentSettingsId] = useState('');
 
-  // Load existing content if editing
+  // Set default payment setting on load
   useEffect(() => {
-    if (editingId) {
-      const existingContent = state.contentItems.find(item => item.id === editingId);
-      if (existingContent) {
-        setTitle(existingContent.title);
-        setPlatform(existingContent.platform);
-        setUploadDate(new Date(existingContent.uploadDate));
-        setViews(existingContent.views);
-        setPaymentSettingsId(existingContent.paymentSettingsId);
-      }
-    } else if (state.paymentSettings.length > 0) {
-      // Set default payment setting for new items
+    if (state.paymentSettings.length > 0 && !paymentSettingsId) {
       setPaymentSettingsId(state.paymentSettings[0].id);
     }
-  }, [editingId, state.contentItems, state.paymentSettings]);
+  }, [state.paymentSettings, paymentSettingsId]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (editingId) {
-      const existingContent = state.contentItems.find(item => item.id === editingId);
-      if (existingContent) {
-        updateContentItem({
-          ...existingContent,
-          title,
-          platform,
-          uploadDate: uploadDate.toISOString(),
-          views,
-          paymentSettingsId
-        });
-      }
-    } else {
-      addContentItem({
-        title,
-        platform,
-        uploadDate: uploadDate.toISOString(),
-        views,
-        paymentSettingsId
-      });
+  // Handle URL input change and detect platform
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newUrl = e.target.value;
+    setVideoUrl(newUrl);
+    setUrlError(null);
+
+    const platform = detectPlatformFromUrl(newUrl);
+    setDetectedPlatform(platform);
+
+    if (newUrl.trim() !== '' && !platform) {
+        if (newUrl.length > 10) { // Show error only if URL seems substantial
+             setUrlError("Could not detect YouTube, TikTok, or Instagram Reel URL.");
+        }
     }
-    
-    onClose();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validations
+    if (!videoUrl || !detectedPlatform || !title || !uploadDate || !paymentSettingsId) {
+        toast.error("Please fill in all fields accurately.");
+        return;
+    }
+    if (startingViews < 0) {
+        toast.error("Starting views cannot be negative.");
+        return;
+    }
+
+    const platform_id = extractIdFromUrl(videoUrl, detectedPlatform);
+
+    const contentData: Omit<ContentItem, 'id' | 'payouts' | 'final_views' | 'status'> & { status: ContentItemStatus; final_views: null } = {
+        title,
+        platform: detectedPlatform,
+        platform_id: platform_id ?? undefined, // Store extracted ID if available
+        video_url: videoUrl,
+        uploadDate: uploadDate.toISOString(),
+        starting_views: startingViews,
+        final_views: null, // Initialized as null
+        status: 'tracking', // Initial status
+        paymentSettingsId
+        // belongsToChannel and managedByManager can default or be omitted
+    };
+
+    try {
+       await addContentItem(contentData);
+       // addContentItem in context should show its own success toast
+       onClose(); // Close dialog on success
+    } catch (error) {
+        console.error("Error adding content item:", error);
+        // Context likely shows error toast
+    }
   };
 
   return (
     <Card className="w-full max-w-lg">
       <CardHeader>
-        <CardTitle>{editingId ? 'Edit Content' : 'Add Content'}</CardTitle>
+        <CardTitle>Add New Content</CardTitle>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
+        
+          {/* 1. Video URL */}
+          <div className="space-y-2">
+              <Label htmlFor="videoUrl">Video URL (YouTube, TikTok, Instagram Reel)</Label>
+              <div className="flex items-center gap-2">
+                   <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                   <Input 
+                    id="videoUrl" 
+                    value={videoUrl} 
+                    onChange={handleUrlChange} 
+                    placeholder="Paste video link here..." 
+                    required
+                    className={cn(urlError && "border-destructive")}
+                   />
+              </div>
+              {urlError && <p className="text-sm text-destructive flex items-center gap-1"><AlertCircle className="h-4 w-4"/> {urlError}</p>}
+          </div>
+
+          {/* 2. Platform (Read-only based on URL) */}
+          <div className="space-y-2">
+              <Label>Detected Platform</Label>
+              <div className="flex items-center p-2 border rounded-md h-10 bg-muted">
+                  {detectedPlatform ? (
+                      <>
+                          <PlatformIcon platform={detectedPlatform} className="mr-2" />
+                          <span className="capitalize">{detectedPlatform}</span>
+                      </>
+                  ) : (
+                      <span className="text-muted-foreground text-sm">Platform will be detected from URL...</span>
+                  )}
+              </div>
+          </div>
+
+          {/* 3. Content Title (Manual) */}
           <div className="space-y-2">
             <Label htmlFor="title">Content Title</Label>
             <Input 
               id="title" 
               value={title} 
               onChange={(e) => setTitle(e.target.value)} 
-              placeholder="e.g., How to Make a Great Video" 
+              placeholder="Enter a descriptive title" 
               required 
+              disabled={!detectedPlatform} // Enable only after platform is detected
             />
           </div>
 
+          {/* 4. Upload Date (Manual) */}
           <div className="space-y-2">
-            <Label htmlFor="platform">Platform</Label>
-            <Select value={platform} onValueChange={(value) => setPlatform(value as Platform)}>
-              <SelectTrigger id="platform">
-                <SelectValue placeholder="Select a platform" />
-              </SelectTrigger>
-              <SelectContent>
-                {state.platforms.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    <div className="flex items-center">
-                      <PlatformIcon platform={p} className="mr-2" />
-                      <span className="capitalize">{p}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="uploadDate">Upload Date</Label>
-            <Popover>
+            <Label htmlFor="uploadDate">Actual Upload Date</Label>
+            <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
               <PopoverTrigger asChild>
                 <Button
                   id="uploadDate"
@@ -121,44 +205,55 @@ const ContentItemForm: React.FC<ContentItemFormProps> = ({ editingId, onClose })
                     "w-full justify-start text-left font-normal",
                     !uploadDate && "text-muted-foreground"
                   )}
+                  disabled={!detectedPlatform} // Enable only after platform is detected
+                  onClick={() => setDatePopoverOpen(true)}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {uploadDate ? format(uploadDate, "PPP") : <span>Pick a date</span>}
+                  {uploadDate ? format(uploadDate, "PPP") : <span>Pick upload date</span>}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
                 <Calendar
                   mode="single"
                   selected={uploadDate}
-                  onSelect={(date) => date && setUploadDate(date)}
-                  initialFocus
+                  onSelect={(date) => {
+                    setUploadDate(date);
+                    setDatePopoverOpen(false);
+                  }}
+                  defaultMonth={uploadDate ?? new Date()}
+                  toDate={new Date()}
+                  required
                   className="pointer-events-auto"
                 />
               </PopoverContent>
             </Popover>
           </div>
+          
+          {/* 5. Starting Views (Manual) */}
+           <div className="space-y-2">
+               <Label htmlFor="startingViews">Starting Views (at time of adding)</Label>
+               <Input 
+                id="startingViews" 
+                type="number" 
+                min="0" 
+                value={startingViews} 
+                onChange={(e) => setStartingViews(parseInt(e.target.value) || 0)} 
+                required 
+                disabled={!detectedPlatform} // Enable only after platform is detected
+               />
+           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="views">Views</Label>
-            <Input 
-              id="views" 
-              type="number" 
-              min="0" 
-              value={views} 
-              onChange={(e) => setViews(parseInt(e.target.value) || 0)} 
-              required 
-            />
-          </div>
-
+          {/* 6. Payment Settings */}
           <div className="space-y-2">
             <Label htmlFor="paymentSettings">Payment Settings</Label>
             <Select 
               value={paymentSettingsId} 
               onValueChange={setPaymentSettingsId}
-              disabled={state.paymentSettings.length === 0}
+              disabled={state.paymentSettings.length === 0 || !detectedPlatform} // Enable only after platform is detected
+              required
             >
               <SelectTrigger id="paymentSettings">
-                <SelectValue placeholder="Select payment settings" />
+                <SelectValue placeholder={state.paymentSettings.length === 0 ? "Create settings first" : "Select payment rules"} />
               </SelectTrigger>
               <SelectContent>
                 {state.paymentSettings.map((setting) => (
@@ -169,8 +264,8 @@ const ContentItemForm: React.FC<ContentItemFormProps> = ({ editingId, onClose })
               </SelectContent>
             </Select>
             {state.paymentSettings.length === 0 && (
-              <p className="text-sm text-destructive">
-                You need to create payment settings first.
+              <p className="text-sm text-destructive flex items-center gap-1">
+                <AlertCircle className="h-4 w-4"/> You need to create payment settings first.
               </p>
             )}
           </div>
@@ -181,9 +276,9 @@ const ContentItemForm: React.FC<ContentItemFormProps> = ({ editingId, onClose })
           </Button>
           <Button 
             type="submit"
-            disabled={state.paymentSettings.length === 0}
+            disabled={!detectedPlatform || !title || !uploadDate || state.paymentSettings.length === 0}
           >
-            {editingId ? 'Update Content' : 'Add Content'}
+            Add Content
           </Button>
         </CardFooter>
       </form>
