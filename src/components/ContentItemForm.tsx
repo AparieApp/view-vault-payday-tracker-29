@@ -182,33 +182,35 @@ const ContentItemForm: React.FC<ContentItemFormProps> = ({ onClose }) => {
 
           {/* 3. Content Title (Manual) */}
           <div className="space-y-2">
-            <Label htmlFor="title">Content Title</Label>
+            <Label htmlFor="title" className="text-base">Title</Label>
             <Input 
               id="title" 
               value={title} 
               onChange={(e) => setTitle(e.target.value)} 
               placeholder="Enter a descriptive title" 
               required 
-              disabled={!detectedPlatform} // Enable only after platform is detected
+              disabled={!detectedPlatform}
+              className="min-h-[48px] text-base px-4" 
             />
           </div>
 
           {/* 4. Upload Date (Manual) */}
           <div className="space-y-2">
-            <Label htmlFor="uploadDate">Actual Upload Date</Label>
+            <Label htmlFor="uploadDate" className="text-base">Actual Upload Date</Label>
             <Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
               <PopoverTrigger asChild>
                 <Button
                   id="uploadDate"
                   variant="outline"
                   className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !uploadDate && "text-muted-foreground"
+                    "w-full justify-start text-left font-normal min-h-[48px] text-base px-4",
+                    !uploadDate && "text-muted-foreground",
+                    "active:bg-accent/80" // Add touch feedback
                   )}
-                  disabled={!detectedPlatform} // Enable only after platform is detected
+                  disabled={!detectedPlatform}
                   onClick={() => setDatePopoverOpen(true)}
                 >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  <CalendarIcon className="mr-2 h-5 w-5" />
                   {uploadDate ? format(uploadDate, "PPP") : <span>Pick upload date</span>}
                 </Button>
               </PopoverTrigger>
@@ -223,7 +225,7 @@ const ContentItemForm: React.FC<ContentItemFormProps> = ({ onClose }) => {
                   defaultMonth={uploadDate ?? new Date()}
                   toDate={new Date()}
                   required
-                  className="pointer-events-auto"
+                  className="touch-pan-y" // Enable touch scrolling
                 />
               </PopoverContent>
             </Popover>

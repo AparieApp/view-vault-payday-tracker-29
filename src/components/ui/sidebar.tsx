@@ -560,7 +560,12 @@ const SidebarMenuButton = React.forwardRef<
         data-sidebar="menu-button"
         data-size={size}
         data-active={isActive}
-        className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+        className={cn(
+          sidebarMenuButtonVariants({ variant, size }),
+          "min-h-[44px]", // Minimum touch target size
+          "active:bg-sidebar-accent active:text-sidebar-accent-foreground", // Touch feedback
+          className
+        )}
         {...props}
       />
     )
@@ -598,21 +603,23 @@ const SidebarMenuAction = React.forwardRef<
   }
 >(({ className, asChild = false, showOnHover = false, ...props }, ref) => {
   const Comp = asChild ? Slot : "button"
+  const { isMobile } = useSidebar()
 
   return (
     <Comp
       ref={ref}
       data-sidebar="menu-action"
       className={cn(
-        "absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 peer-hover/menu-button:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
-        // Increases the hit area of the button on mobile.
-        "after:absolute after:-inset-2 after:md:hidden",
-        "peer-data-[size=sm]/menu-button:top-1",
-        "peer-data-[size=default]/menu-button:top-1.5",
-        "peer-data-[size=lg]/menu-button:top-2.5",
-        "group-data-[collapsible=icon]:hidden",
-        showOnHover &&
-          "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:text-sidebar-accent-foreground md:opacity-0",
+        "absolute right-1 flex items-center justify-center rounded-md outline-none",
+        "min-w-[44px] min-h-[44px] p-2", // Increased touch target size
+        "text-sidebar-foreground transition-all",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "active:bg-sidebar-accent/90 active:scale-95", // Touch feedback
+        "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        // Mobile-friendly visibility
+        isMobile ? "opacity-100" : cn(
+          showOnHover && "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0"
+        ),
         className
       )}
       {...props}
